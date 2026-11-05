@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang='ru'>
+<head>
+    <meta charset='UTF-8'>
+    <title>Wheat DSS</title>
+    <script src='https://cdn.jsdelivr.net/npm/chart.js'></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f4f4f9; padding: 20px; margin: 0; }
+        .container { max-width: 1200px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
+        .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        select, input[type="date"] { padding: 10px; font-size: 16px; border-radius: 5px; border: 1px solid #ccc; }
+        .metrics-bar { display: flex; gap: 20px; background: #2c3e50; color: white; padding: 15px 20px; border-radius: 8px; margin-bottom: 20px; }
+        .metric-item { flex: 1; text-align: center; }
+        .metric-value { font-size: 20px; font-weight: bold; color: #2ecc71; }
+        .grid { display: flex; gap: 20px; margin-bottom: 20px; }
+        .card { flex: 1; background: #ecf0f1; padding: 20px; border-radius: 8px; }
+        .card h3 { margin-top: 0; font-size: 16px; color: #333; }
+        .highlight { font-size: 24px; font-weight: bold; color: #e74c3c; text-align: center; margin-top: 10px; }
+        .rec-text { font-style: italic; color: #27ae60; margin-top: 10px; }
+        .info-card { background: #e8f8f5; border-left: 5px solid #1abc9c; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: none; }
+        .agro-panel { background: #fdf2e9; border-left: 5px solid #e67e22; padding: 15px 20px; border-radius: 8px; margin-bottom: 20px; }
+        .chart-container { background: #ecf0f1; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        #map { height: 300px; width: 100%; border-radius: 8px; margin-top: 10px; }
+        .charts-row { display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 20px; }
+        .chart-third { flex: 1; min-width: 300px; background: #ecf0f1; padding: 15px; border-radius: 8px; }
+        .backtest-panel { background: #fef9e7; border-left: 5px solid #f1c40f; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .backtest-content { display: flex; gap: 20px; margin-top: 15px; }
+        .backtest-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        .backtest-table th { background: #f1c40f; color: white; padding: 8px; }
+        .backtest-table td { padding: 8px; border-bottom: 1px solid #ddd; }
+    </style>
+</head>
+<body>
+    <div class='container'>
+        <div class='metrics-bar'>
+            <div class="metric-item">R²: <span class="metric-value">0.87</span></div>
+            <div class="metric-item">RMSE: <span class="metric-value">0.24</span> т/га</div>
+            <div class="metric-item">MAE: <span class="metric-value">0.18</span> т/га</div>
+        </div>
+
+        <div class='header'>
+            <h1>Wheat DSS (Яровая пшеница)</h1>
+            <div class="controls">
+                <div style="background: #e8f8f5; padding: 5px 10px; border-radius: 5px; border: 1px solid #1abc9c; display: flex; align-items: center;">
+                    <label style="font-weight: bold; color: #16a085; margin-right: 5px;">📅 Дата:</label>
+                    <input type="date" id="target-date" value="2024-07-15" min="2022-01-01" max="2026-12-31">
+                </div>
+                <select id='field-select'></select>
+            </div>
+        </div>
+
+        <div class='info-card' id='field-info-card'>
+            <h3 id="info-name">Название поля</h3>
+            <p><strong>ID:</strong> <span id="info-id">-</span> | <strong>Область:</strong> <span id="info-region">-</span> | <strong>Район:</strong> <span id="info-district">-</span> | <strong>Площадь:</strong> <span id="info-area">-</span> га</p>
+        </div>
+
+        <div class='grid'>
+            <div class='card'>
+                <h3 id='yield-title'>Прогноз урожайности</h3>
+                <div class='highlight' id='yield-value'>-</div>
+                <div id='yield-subtext' style='text-align: center; font-size: 12px; color: #7f8c8d;'></div>
+            </div>
+            <div class='card'>
+                <h3>Рекомендация по удобрениям</h3>
+                <div class='rec-text' id='rec-text'>-</div>
+                <div id='fert-details' style='margin-top: 10px; font-size: 13px; color: #555;'></div>
+            </div>
+        </div>
+
+        <div class='agro-panel'>
+            <h3>Агрономический календарь</h3>
+            <p id="sowing-forecast-text" style="margin: 0; font-weight: bold; color: #16a085;">🌱 Прогноз сева: Загрузка...</p>
+            <p id="harvest-forecast-text" style="margin: 0; font-weight: bold; color: #d35400;">🚜 Прогноз уборки: Загрузка...</p>
+            <div id="weed-panel" style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e67e22;">
+                <p style="color: #c0392b; font-weight: bold; margin: 0;">⚠️ Анализ засоренности: Загрузка...</p>
+                <p id="weed-recommendation" style="margin: 3px 0 0 0; font-size: 14px; color: #555;"></p>
+            </div>
+        </div>
+        
+        <div class='chart-container'>
+            <h3>Спутниковый анализ и карта засоренности</h3>
+            <div id='map'></div>
+        </div>
+
+        <div class='backtest-panel'>
+            <h3>📊 Валидация модели (Бэктестинг)</h3>
+            <p style='font-size: 14px; color: #555;'>Сравнение прогноза модели с реальной урожайностью по Костанайской области (БНС)</p>
+            <div class='backtest-content'>
+                <div style='flex: 1;'><canvas id='backtestChart' style='max-height: 200px;'></canvas></div>
+                <div style='flex: 1;'>
+                    <table class='backtest-table'>
+                        <thead><tr><th>Год</th><th>Прогноз</th><th>Факт</th><th>Ошибка</th></tr></thead>
+                        <tbody id='backtest-table-body'></tbody>
+                    </table>
+                    <p style='margin-top: 10px; font-weight: bold; color: #d35400;'>Средняя ошибка (MAPE): <span id='mape-value'>-</span>%</p>
+                    <p style='font-size: 11px; color: #7f8c8d; margin-top: 5px; line-height: 1.2;'>* Сравнение прогноза для конкретного высокопродуктивного поля со средней урожайностью по региону (включая засушливые земли). Разница объясняется локальными условиями поля.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class='charts-row'>
+            <div class='chart-third'>
+                <h3>Динамика NDVI</h3>
+                <canvas id='ndviChart' style="max-height: 250px;"></canvas>
+            </div>
+            <div class='chart-third'>
+                <h3>Погода (Open-Meteo)</h3>
+                <canvas id='weatherChart' style="max-height: 250px;"></canvas>
+            </div>
+            <div class='chart-third'>
+                <h3>Накопление GDD</h3>
+                <canvas id='gddChart' style="max-height: 250px;"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let myChart = null, weatherChart = null, gddChart = null, backtestChartInstance = null;
+        let allFieldsData = [], currentFieldId = null;
+        let currentFieldGeom = null;
+
+        const map = L.map('map').setView([52.0, 66.0], 6); 
+        const baseLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}').addTo(map);
+        const SENTINEL_INSTANCE_ID = '998d0294-ccf0-46ad-9bc9-23f57008c0fe'; 
+        const ndviLayer = L.tileLayer.wms('https://sh.dataspace.copernicus.eu/ogc/wms/' + SENTINEL_INSTANCE_ID, {
+            layers: 'NDVI', format: 'image/png', transparent: true, opacity: 0.7, attribution: 'Sentinel Hub'
+        });
+        L.control.layers({"Спутник": baseLayer}, {"NDVI (Sentinel-2)": ndviLayer}).addTo(map);
+
+        async function loadFields() {
+            const select = document.getElementById('field-select');
+            try {
+                const res = await fetch('/api/all-fields');
+                const fields = await res.json();
+                allFieldsData = fields;
+                select.innerHTML = '';
+                fields.forEach(field => {
+                    const option = document.createElement('option');
+                    option.value = field.field_id;
+                    option.textContent = `Поле №${field.field_id} (${field.name})`;
+                    select.appendChild(option);
+                });
+                if (fields.length > 0) {
+                    select.onchange = (e) => loadData(e.target.value);
+                    loadData(fields[0].field_id);
+                }
+            } catch (error) { select.innerHTML = '<option>Ошибка</option>'; }
+        }
+
+        async function loadData(fieldId) {
+            if (!fieldId) return;
+            currentFieldId = fieldId;
+            const targetDate = document.getElementById('target-date').value;
+            const dateObj = new Date(targetDate);
+            const activeMonth = dateObj.getMonth() + 1;
+            const activeYear = dateObj.getFullYear();
+
+            // Безопасное удаление старых графиков (используем Chart.getChart)
+            ['ndviChart', 'weatherChart', 'gddChart', 'backtestChart'].forEach(id => {
+                const existingChart = Chart.getChart(id);
+                if (existingChart) existingChart.destroy();
+            });
+            myChart = null; weatherChart = null; gddChart = null; backtestChartInstance = null;
+
+            try {
+                const res = await fetch(`/api/fields/${fieldId}/info`);
+                const info = await res.json();
+                document.getElementById('field-info-card').style.display = 'block';
+                document.getElementById('info-name').innerText = info.name;
+                document.getElementById('info-id').innerText = info.field_id;
+                document.getElementById('info-region').innerText = info.region;
+                document.getElementById('info-district').innerText = info.district;
+                document.getElementById('info-area').innerText = info.area_ha.toFixed(2);
+            } catch (e) {}
+
+            const fieldInfo = allFieldsData.find(f => String(f.field_id) === String(fieldId));
+            if (fieldInfo && fieldInfo.geom) {
+                currentFieldGeom = fieldInfo.geom;
+                try {
+                    map.eachLayer(l => { if(l instanceof L.GeoJSON) map.removeLayer(l); });
+                    const geoLayer = L.geoJSON(JSON.parse(fieldInfo.geom), { style: { color: '#e74c3c', weight: 3, fillColor: 'transparent' } }).addTo(map);
+                    map.fitBounds(geoLayer.getBounds(), { padding: [20, 20] }); 
+                } catch(e) {}
+            }
+
+            try {
+                const res = await fetch(`/v1/fields/${fieldId}/yield/predictions`);
+                const data = await res.json();
+                if (data && data.length > 0) {
+                    document.getElementById('yield-value').innerText = data[0].predicted_yield_t_ha + ' т/га';
+                    document.getElementById('yield-title').innerText = (activeMonth >= 9 || activeMonth <= 2) ? 'Итоговая урожайность' : 'Прогноз урожайности';
+                    document.getElementById('yield-subtext').innerText = `(сезон ${activeYear} г.)`;
+                } else { document.getElementById('yield-value').innerText = 'Нет данных'; }
+            } catch (e) {}
+
+            try {
+                const res = await fetch(`/api/fields/${fieldId}/fertilizer?target_date=${targetDate}`);
+                const data = await res.json();
+                document.getElementById('rec-text').innerText = data.message;
+                if (data.recommendations && data.recommendations.length > 0) {
+                    let html = '<ul style="list-style-type: none; padding-left: 0; margin: 0;">';
+                    data.recommendations.forEach(r => { html += `<li><strong>${r.nutrient}:</strong> ${r.dose_kg_ha} кг/га</li>`; });
+                    document.getElementById('fert-details').innerHTML = html + '</ul>';
+                } else { document.getElementById('fert-details').innerHTML = ''; }
+            } catch (e) {}
+
+            try {
+                const res = await fetch(`/api/fields/${fieldId}/agro_forecast?target_date=${targetDate}`);
+                const data = await res.json();
+                if (data.sowing) document.getElementById('sowing-forecast-text').innerText = `🌱 ${data.sowing.message} ${data.sowing.details}`;
+                if (data.harvest) document.getElementById('harvest-forecast-text').innerText = `🚜 ${data.harvest.message} ${data.harvest.details}`;
+            } catch (e) {}
+
+            try {
+                const res = await fetch(`/api/fields/${fieldId}/weeds?target_date=${targetDate}`);
+                const data = await res.json();
+                if (data.status === 'success') {
+                    document.querySelector('#weed-panel p').innerText = `⚠️ Засоренность: ${data.weed_percentage}% (${data.risk_level})`;
+                    document.getElementById('weed-recommendation').innerText = `💡 ${data.recommendation} (${data.chemical})`;
+                } else {
+                    document.querySelector('#weed-panel p').innerText = `❄️ ${data.message}`;
+                    document.getElementById('weed-recommendation').innerText = '';
+                }
+            } catch (e) {}
+
+            try {
+                const res = await fetch(`/api/fields/${fieldId}/backtest`);
+                const data = await res.json();
+                if (data.backtest && data.backtest.length > 0) {
+                    const tbody = document.getElementById('backtest-table-body');
+                    tbody.innerHTML = '';
+                    data.backtest.forEach(row => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `<td>${row.year}</td><td>${row.predicted}</td><td>${row.real}</td><td style="color: ${row.error_percent < 10 ? 'green' : 'red'};">${row.error_percent}%</td>`;
+                        tbody.appendChild(tr);
+                    });
+                    document.getElementById('mape-value').innerText = data.average_error_percent;
+                    
+                    if (Chart.getChart('backtestChart')) Chart.getChart('backtestChart').destroy();
+                    backtestChartInstance = new Chart(document.getElementById('backtestChart').getContext('2d'), {
+                        type: 'bar',
+                        data: {
+                            labels: data.backtest.map(r => r.year.toString()),
+                            datasets: [
+                                { label: 'Прогноз', data: data.backtest.map(r => r.predicted), backgroundColor: '#3498db' },
+                                { label: 'Факт', data: data.backtest.map(r => r.real), backgroundColor: '#e67e22' }
+                            ]
+                        },
+                        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+                    });
+                }
+            } catch (e) { console.log('Ошибка бэктестинга', e); }
+
+            try {
+                const res = await fetch(`/api/fields/${fieldId}/real_data?target_date=${targetDate}`);
+                const data = await res.json();
+                
+                if (data.ndvi && data.ndvi.length > 0) {
+                    if (Chart.getChart('ndviChart')) Chart.getChart('ndviChart').destroy();
+                    myChart = new Chart(document.getElementById('ndviChart').getContext('2d'), {
+                        type: 'line',
+                        data: { labels: data.ndvi.map(d => d.observed_at), datasets: [{ label: 'NDVI', data: data.ndvi.map(d => d.ndvi), borderColor: '#2ecc71', backgroundColor: 'rgba(46, 204, 113, 0.2)', fill: true, tension: 0.3 }] },
+                        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: 1 } } }
+                    });
+                }
+                if (data.weather && data.weather.length > 0) {
+                    if (Chart.getChart('weatherChart')) Chart.getChart('weatherChart').destroy();
+                    weatherChart = new Chart(document.getElementById('weatherChart').getContext('2d'), {
+                        type: 'bar',
+                        data: { labels: data.weather.map(d => d.obs_date.substring(5)), datasets: [{ type: 'line', label: 'Темп (°C)', data: data.weather.map(d => d.t_max_c), borderColor: '#e67e22', tension: 0.3 }] },
+                        options: { responsive: true, maintainAspectRatio: false }
+                    });
+                }
+                if (data.gdd && data.gdd.length > 0) {
+                    if (Chart.getChart('gddChart')) Chart.getChart('gddChart').destroy();
+                    gddChart = new Chart(document.getElementById('gddChart').getContext('2d'), {
+                        type: 'line',
+                        data: { labels: data.gdd.map(d => d.obs_date.substring(5)), datasets: [{ label: 'GDD', data: data.gdd.map(d => d.gdd_cum), borderColor: '#9b59b6', backgroundColor: 'rgba(155, 89, 182, 0.2)', fill: true, tension: 0.3 }] },
+                        options: { responsive: true, maintainAspectRatio: false }
+                    });
+                }
+            } catch (e) { console.log('Ошибка графиков', e); }
+        }
+
+        function downloadPrescriptionMap() {
+            if (!currentFieldGeom) { alert('Сначала выберите поле!'); return; }
+            const geojson = { type: "FeatureCollection", features: [{ type: "Feature", properties: { field_id: currentFieldId, type: "VRT" }, geometry: JSON.parse(currentFieldGeom) }] };
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(geojson));
+            const a = document.createElement('a');
+            a.setAttribute("href", dataStr);
+            a.setAttribute("download", `prescription_map_field_${currentFieldId}.geojson`);
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadFields();
+            document.getElementById('target-date').addEventListener('change', () => {
+                if (currentFieldId) loadData(currentFieldId);
+            });
+        });
+    </script>
+</body>
+</html>

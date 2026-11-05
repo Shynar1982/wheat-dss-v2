@@ -1,0 +1,12 @@
+.git
+.env
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.venv
+data/
+data.zip
+*.zip
+*.xlsx
+*.db
