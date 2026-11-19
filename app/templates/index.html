@@ -92,7 +92,8 @@
                 <div style='flex: 1;'><canvas id='backtestChart' style='max-height: 200px;'></canvas></div>
                 <div style='flex: 1;'>
                     <table class='backtest-table'>
-                        <thead><tr><th>Год</th><th>Прогноз</th><th>Факт</th><th>Ошибка</th></tr></thead>
+                        <thead><tr><th>Год</th><th>Прогноз</th><th>Факт</th><th>Ошибка</th>
+                        <th>Статус</th></tr></thead>
                         <tbody id='backtest-table-body'></tbody>
                     </table>
                     <p style='margin-top: 10px; font-weight: bold; color: #d35400;'>Средняя ошибка (MAPE): <span id='mape-value'>-</span>%</p>
@@ -265,6 +266,15 @@
                         data: { labels: data.ndvi.map(d => d.observed_at), datasets: [{ label: 'NDVI', data: data.ndvi.map(d => d.ndvi), borderColor: '#2ecc71', backgroundColor: 'rgba(46, 204, 113, 0.2)', fill: true, tension: 0.3 }] },
                         options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: 1 } } }
                     });
+                } else {
+                    // Если реальных данных нет — уничтожаем старый график и показываем заглушку
+                    if (Chart.getChart('ndviChart')) Chart.getChart('ndviChart').destroy();
+                    const ctx = document.getElementById('ndviChart').getContext('2d');
+                    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+                    ctx.font = "16px Arial";
+                    ctx.fillStyle = "#999";
+                    ctx.textAlign = "center";
+                    ctx.fillText("Нет спутниковых данных за выбранный период", ctx.canvas.width/2, ctx.canvas.height/2);
                 }
                 if (data.weather && data.weather.length > 0) {
                     if (Chart.getChart('weatherChart')) Chart.getChart('weatherChart').destroy();
